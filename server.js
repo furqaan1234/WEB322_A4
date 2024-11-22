@@ -14,40 +14,31 @@ GitHub Repository URL: https://github.com/furqaan1234/WEB322_A4.git
 
 const express = require('express');
 const path = require('path');
+const storeService = require('./store-service');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
 const streamifier = require('streamifier');
-const storeService = require('./store-service');
-const Handlebars = require('handlebars');
-
-const app = express();
-const upload = multer();
 const exphbs = require('express-handlebars');
 
-app.engine('.hbs', exphbs.engine({
-  extname: '.hbs',
-  defaultLayout: 'main',
-  layoutsDir: path.join(__dirname, 'views', 'layouts'),
-  helpers: {
-    navLink: function(url, options) {
-      return `<li class="nav-item${url === options.data.root.activeRoute ? ' active' : ''}">
-                  <a class="nav-link" href="${url}">${options.fn(this)}</a>
-              </li>`;
-    },
-    equal: function(lvalue, rvalue, options) {
-      if (arguments.length < 3) {
-        throw new Error("Handlebars Helper equal needs 2 parameters");
-      }
-      return lvalue != rvalue ? options.inverse(this) : options.fn(this);
-    },
-    safeHTML: function(context) {
-      return context ? new Handlebars.SafeString(context) : "";
-    }
-  }
-}));
-app.set('view engine', '.hbs');
-app.set('views', path.join(__dirname, 'views'));
+// Initialize express app
+const app = express();
 
+// Set the port to process.env.PORT or default to 8080
+const HTTP_PORT = process.env.PORT || 8080;
+
+// Configure Handlebars as the view engine
+const hbsHelpers = {
+  navLink: function (url, options) {
+    const isActive = app.locals.activeRoute === url;
+    return `<li class="nav-item"><a class="nav-link ${
+      isActive ? 'active' : ''
+    }" href="${url}">${options.fn(this)}</a></li>`;
+  },
+};
+app.engine('.hbs', exphbs.engine({ extname: '.hbs', helpers: hbsHelpers }));
+app.set('view engine', '.hbs');
+
+// Set up Cloudinary configuration
 cloudinary.config({
   cloud_name: 'dxsl8la2d',
   api_key: '987492325492392',
@@ -55,138 +46,246 @@ cloudinary.config({
   secure: true
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+const upload = multer(); // Initialize multer without disk storage
+
+// Middleware to serve static files from the "public" folder
+app.use(express.static('public'));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(function(req, res, next) {
-  res.locals.activeRoute = req.baseUrl + req.path;
+// Middleware to set active route
+app.use((req, res, next) => {
+  let route = req.path.substring(1);
+  app.locals.activeRoute = `/${route}`;
   next();
 });
 
+// Route for the root URL ("/") to redirect to the "/about" page
 app.get('/', (req, res) => {
   res.redirect('/shop');
 });
 
+// Route to serve the about.html file from the "views" folder
 app.get('/about', (req, res) => {
   res.render('about');
 });
 
+
+// Route for shop (all published items)
+app.get('/shop', (req, res) => {
+  const category = req.query.category; // Get category from query
+  const id = req.query.id; // Get item id from query
+  let viewData = {};
+
+  if (id) {
+    // Case 1: If `id` is specified, show that specific item
+    storeService.getItemById(id)
+      .then((item) => {
+        viewData.post = item; // Store the specific item
+        return storeService.getPublishedItems();
+      })
+      .then((items) => {
+        viewData.posts = items; // Store all published items
+        return storeService.getCategories();
+      })
+      .then((categories) => {
+        viewData.categories = categories; // Store all categories
+      })
+      .catch(() => {
+        viewData.message = "No item found.";
+      })
+      .finally(() => {
+        res.render('shop', { data: viewData });
+      });
+  } else if (category) {
+    // Case 2: If `category` is specified, show all items in that category
+    storeService.getPublishedItemsByCategory(category)
+      .then((filteredItems) => {
+        viewData.filteredPosts = filteredItems; // Store filtered items
+        return storeService.getPublishedItems();
+      })
+      .then((items) => {
+        viewData.posts = items; // Store all published items
+        return storeService.getCategories();
+      })
+      .then((categories) => {
+        viewData.categories = categories; // Store all categories
+      })
+      .catch(() => {
+        viewData.message = "No items found for this category.";
+      })
+      .finally(() => {
+        res.render('shop', { data: viewData });
+      });
+  } else {
+    // Default case: Show all published items
+    storeService.getPublishedItems()
+      .then((items) => {
+        viewData.posts = items; // Store all published items
+        viewData.filteredPosts = items; // Show all items in the main section
+        return storeService.getCategories();
+      })
+      .then((categories) => {
+        viewData.categories = categories; // Store all categories
+      })
+      .catch(() => {
+        viewData.message = "No items found.";
+      })
+      .finally(() => {
+        res.render('shop', { data: viewData });
+      });
+  }
+});
+
+  
+// Route for shop items
+app.get('/shop/:id', (req, res) => {
+  const id = req.params.id;
+  const category = req.query.category;
+
+  let viewData = {};
+
+  storeService.getItemById(id)
+    .then((item) => {
+      viewData.post = item; // Set the specific item
+    })
+    .catch(() => {
+      viewData.message = "No item found.";
+    })
+    .then(() => {
+      return storeService.getPublishedItems();
+    })
+    .then((items) => {
+      viewData.posts = items; // Set all published items
+    })
+    .catch(() => {
+      viewData.posts = [];
+    })
+    .then(() => {
+      return storeService.getCategories();
+    })
+    .then((categories) => {
+      viewData.categories = categories; // Set all categories
+    })
+    .catch(() => {
+      viewData.categoriesMessage = "No categories found.";
+    })
+    .finally(() => {
+      if (viewData.post) {
+        res.render('shop', { data: viewData });
+      } else {
+        res.render('shop', { message: viewData.message });
+      }
+    });
+});
+
+// Route for items (edited to use res.render)
+app.get('/items', (req, res) => {
+  // Check for the query parameters in the URL
+  if (req.query.category) {
+    // Call the getItemsByCategory function from store-service.js
+    storeService.getItemsByCategory(req.query.category)
+      .then((items) => res.render('items', { items }))
+      .catch(() => res.render('items', { message: 'No items found for this category' }));
+  } else if (req.query.minDate) {
+    // Call the getItemsByMinDate function from store-service.js
+    storeService.getItemsByMinDate(req.query.minDate)
+      .then((items) => res.render('items', { items }))
+      .catch(() => res.render('items', { message: 'No items found for this date range' }));
+  } else {
+    // Default behavior: get all items
+    storeService.getAllItems()
+      .then((items) => res.render('items', { items }))
+      .catch(() => res.render('items', { message: 'No items found' }));
+  }
+});
+
+// Route to fetch a single item by ID
+app.get('/item/:id', (req, res) => {
+  storeService.getItemById(req.params.id)
+    .then((item) => res.render('item', { item }))
+    .catch((err) => res.render('item', { message: 'Item not found' }));
+});
+  
+  
+// Route for categories (edited to use res.render)
+app.get('/categories', (req, res) => {
+  storeService.getCategories()
+    .then((categories) => res.render('categories', { categories }))
+    .catch(() => res.render('categories', { message: 'No categories found' }));
+});
+  
+
+// Route to render the add item page addItems.hbs
 app.get('/items/add', (req, res) => {
   res.render('addItem');
 });
 
-app.post('/items/add', upload.single('featureImage'), async (req, res) => {
-  try {
-    let imageUrl = '';
-    if (req.file) {
-      const result = await new Promise((resolve, reject) => {
-        let stream = cloudinary.uploader.upload_stream({ resource_type: 'image' }, (error, result) => {
-          if (result) {
-            resolve(result.url);
-          } else {
-            reject(error);
+// Route for adding a new item with image upload
+app.post('/items/add', upload.single('featureImage'), (req, res) => {
+  if (req.file) {
+    // Function to upload the file stream to Cloudinary
+    let streamUpload = (req) => {
+      return new Promise((resolve, reject) => {
+        let stream = cloudinary.uploader.upload_stream(
+          (error, result) => {
+            if (result) {
+              resolve(result);
+            } else {
+              reject(error);
+            }
           }
-        });
+        );
         streamifier.createReadStream(req.file.buffer).pipe(stream);
       });
-      imageUrl = result;
+    };
+  
+    // Async function to handle the upload
+    async function upload(req) {
+      let result = await streamUpload(req);
+      console.log(result); // For debugging, shows the Cloudinary upload result
+      return result;
     }
+  
+    // Upload the image and process the item
+    upload(req).then((uploaded) => {
+      processItem(uploaded.url);
+    }).catch((err) => {
+      res.status(500).send("Failed to upload image.");
+    });
+  
+  } else {
+    // No file uploaded; proceed with an empty image URL
+    processItem("");
+  }
+  
+  // Function to process the item data
+  function processItem(imageUrl) {
     req.body.featureImage = imageUrl;
-    await storeService.addItem(req.body);
-    res.redirect('/items');
-  } catch (error) {
-    console.error("Error adding item:", error);
-    res.status(500).send("Error adding item");
-  }
-});
 
-app.get('/items', async (req, res) => {
-  let viewData = {};
-  try {
-    const items = await storeService.getPublishedItems();
-    viewData.items = items;
-  } catch (err) {
-    viewData.message = "No items available.";
+    // Use the new function in store-service to add the item
+    storeService.addItem(req.body)
+      .then((newItem) => {
+        res.redirect('/items'); // Redirect to /items after adding new item
+      })
+      .catch((err) => {
+        res.status(500).send("Error adding new item.");
+      });
   }
-  try {
-    const categories = await storeService.getCategories();
-    viewData.categories = categories;
-  } catch (err) {
-    viewData.categoriesMessage = "No categories available.";
-  }
-  res.render('items', { data: viewData });
-});
-
-app.get('/categories', async (req, res) => {
-  try {
-    const categories = await storeService.getCategories();
-    res.render('categories', { categories });
-  } catch (error) {
-    console.error("Error retrieving categories:", error);
-    res.render('categories', { message: "No categories available" });
-  }
-});
-
-app.get('/shop', async (req, res) => {
-  let viewData = {};
-  try {
-    let items = [];
-    if (req.query.category) {
-      items = await storeService.getPublishedItemsByCategory(req.query.category);
-    } else {
-      items = await storeService.getPublishedItems();
-    }
-    items.sort((a, b) => new Date(b.itemDate) - new Date(a.itemDate));
-    let item = items[0];
-    viewData.posts = items;
-    viewData.post = item;
-  } catch (err) {
-    viewData.message = "No results";
-  }
-  try {
-    let categories = await storeService.getCategories();
-    viewData.categories = categories;
-  } catch (err) {
-    viewData.categoriesMessage = "No categories available";
-  }
-  res.render('shop', { data: viewData });
-});
-
-app.get('/shop/:id', async (req, res) => {
-  let viewData = {};
-  try {
-    let items = [];
-    if (req.query.category) {
-      items = await storeService.getPublishedItemsByCategory(req.query.category);
-    } else {
-      items = await storeService.getPublishedItems();
-    }
-    items.sort((a, b) => new Date(b.itemDate) - new Date(a.itemDate));
-    viewData.posts = items;
-  } catch (err) {
-    viewData.message = "No results";
-  }
-  try {
-    viewData.post = await storeService.getItemById(req.params.id);
-  } catch (err) {
-    viewData.message = "No results";
-  }
-  try {
-    let categories = await storeService.getCategories();
-    viewData.categories = categories;
-  } catch (err) {
-    viewData.categoriesMessage = "No categories available";
-  }
-  res.render('shop', { data: viewData });
-});
-
+});  
+  
+// Initialize the data from JSON files before starting the server
 storeService.initialize()
   .then(() => {
-    const PORT = process.env.PORT || 8080;
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+    app.listen(HTTP_PORT, () => {
+      console.log(`Express http server listening on port ${HTTP_PORT}`);
     });
   })
   .catch((err) => {
-    console.error("Failed to initialize data:", err);
+    console.error("Unable to start server:", err);
   });
+
+// 404 fallback
+app.use((req, res) => {
+  res.status(404).render('404');
+});
