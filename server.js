@@ -5,7 +5,7 @@ Academic Policy. No part of this assignment has been copied manually or
 electronically from any other source (including 3rd party web sites) or 
 distributed to other students.
 
-Name: Furqaan Adnan
+Name: Furqaan Adnan.
 Student ID: 147704225
 Date: 2024-11-21
 Replit Web App URL: https://replit.com/@jdbakaraniya/web322-app-a4
