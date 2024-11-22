@@ -8,7 +8,7 @@ distributed to other students.
 Name: Furqaan Adnan.
 Student ID: 147704225
 Date: 2024-11-21
-Replit Web App URL: https://replit.com/@jdbakaraniya/web322-app-a4
+Replit Web App URL: https://web322-a4-w9oi.onrender.com/shop ( I have used render as replit was not free)
 GitHub Repository URL: https://github.com/furqaan1234/WEB322_A4.git
 ****************************/
 
